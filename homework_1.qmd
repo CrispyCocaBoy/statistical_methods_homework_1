@@ -43,7 +43,7 @@ tibble(dataf)
 
 ## Exploratory Data Analysis
 
-```{r, results ='asis'}
+```{r}
 #| echo: false
 # Data cleaning
 
@@ -106,7 +106,7 @@ The categorical variables represent demographic and medical status indicators:
 
 ### Analysis of the categorical variable
 
-```{r, fig.width=8, fig.height=2, fig.align='center'}
+```{r}
 #| echo: false
 CHD <- ggplot(as.data.frame(table(dataf$CHD)), aes(x = Var1, y = Freq, fill = Var1)) + 
   geom_bar(stat = "identity") + 
@@ -190,7 +190,7 @@ However, the variables **`stroke` and `diabetes`** display **no meaningful 
 
 ### Analysis of the numerical variable
 
-```{r,  fig.width=9, fig.height=4, fig.align='center'}
+```{r}
 #| echo: false
 
 # Singoli plot
@@ -232,7 +232,7 @@ The boxplots show a distribution of **Age**, **Cholesterol**, **Heart Rate (HR)*
 
 -   **BMI** distributions are very similar across CHD categories, indicating that BMI might not be a strong discriminator in this dataset, despite being a general risk factor for cardiovascular issues.
 
-```{r, fig.width=9, fig.height=4, fig.align='center'}
+```{r}
 #| echo: false
 library(ggplot2)
 library(patchwork)
@@ -487,7 +487,7 @@ knn_pred <- knn(train = X_train_norm, test = X_test_norm, cl = y_train, k = 29)
 
 ### Evaluation of the two model
 
-```{r, results='asis'}
+```{r}
 #| echo: false
 
 # Prediction for logistic
@@ -538,7 +538,7 @@ print(model_eval)
 ```
 
 ```{r}
-#| echo: false
+
 
 
 roc_score <- roc(response = as.numeric(test_data$CHD) - 1, predictor = logistic_probs)

@@ -2,6 +2,7 @@
 title: "Homework_1"
 format: pdf
 editor: visual
+author: "Matteo Massari"
 ---
 
 ```{r setup, include=FALSE}

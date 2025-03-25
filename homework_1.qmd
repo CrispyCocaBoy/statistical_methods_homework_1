@@ -1,0 +1,581 @@
+---
+title: "Homework_1"
+format: pdf
+editor: visual
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+	message = FALSE,
+	warning = FALSE,
+	tidy = TRUE,
+	tidy.opts = list(width.cutoff = 80)
+)
+```
+
+# Homework
+
+This report is based on data from a cardiovascular study conducted in the United States, aimed at identifying potential risk factors associated with the development of coronary heart disease (CHD) within a 10-year period. The goal of the analysis is to explore the relationship between these predictors and the onset of CHD, and to compare the performance of two predictive models — logistic regression and k-nearest neighbors (KNN) — in classifying individuals at risk. The report includes data exploration, model fitting, performance evaluation, and a final discussion on the most suitable approach for predicting CHD risk based on the available information.
+
+```{r}
+#| include: false
+rm(list=ls())
+library(pROC)
+library(tidyverse)
+library(tidymodels)
+library(dplyr)
+library(patchwork)
+library(DescTools)
+library(readr)
+library(class)
+library(kableExtra)
+library(skimr)
+
+library(factoextra)
+
+
+theme_set(theme_minimal())
+
+dataf <- read_csv("CHD_data.csv")
+tibble(dataf)
+```
+
+## Exploratory Data Analysis
+
+```{r, results ='asis'}
+#| echo: false
+# Data cleaning
+
+# remove na
+dataf <- na.omit(dataf)
+
+# factor 
+dataf <- dataf %>%
+  mutate(sex = as.factor(sex)) %>%
+  mutate(education = as.factor(education)) %>%
+  mutate(CHD = as.factor(CHD)) %>%
+  mutate(education = recode(education, 
+                            "1" = "no HS degree", 
+                            "2" = "HS graduate",
+                            "3" = "college graduate", 
+                            "4" = "post-college"
+                            )) %>%
+  mutate(smoker = as.factor(smoker)) %>%
+  mutate(smoker = recode(smoker, 
+                         "1" = "yes", 
+                         "0" = "no")) %>%
+  mutate(stroke = as.factor(stroke)) %>%
+  mutate(stroke = recode(stroke, 
+                         "1" = "yes", 
+                         "0" = "no")) %>%
+  mutate(HTN = as.factor(HTN)) %>%
+  mutate(HTN = recode(HTN, 
+                      "1" = "yes", 
+                      "0" = "no")) %>%
+  mutate(diabetes = as.factor(diabetes)) %>%
+  mutate(diabetes = recode(diabetes, 
+                           "1" = "yes", 
+                           "0" = "no"))
+summary(dataf)
+```
+
+The numeric variables provide relevant continuous measurements related to cardiovascular health.
+
+-   **Age** ranges from 32 to 70 years, with a mean of approximately 49.5, suggesting a middle-aged population.
+
+-   **Cigarettes per day (cpd)** has a mean of 9.0, but both the median and first quartile are 0, indicating that a large portion of individuals do not smoke.
+
+-   **Cholesterol** levels show a wide range (113–600), with a median of 234 and a mean of 236.7, which are within expected medical ranges but suggest possible outliers on the high end.
+
+-   **Diastolic blood pressure (DBP)** and **heart rate (HR)** both exhibit moderate variability with means of \~83 and \~76 respectively.
+
+-   **Body Mass Index (BMI)** has a mean of 25.8, slightly above the healthy threshold (25), indicating the average participant is slightly overweight.
+
+The categorical variables represent demographic and medical status indicators:
+
+-   **Sex** is nearly balanced (Females: 2297, Males: 1742).
+
+-   **Education** spans four levels, with most individuals having no high school degree (1681) or being high school graduates (1220). This may relate to health literacy and outcomes.
+
+-   **Smoker** status is evenly split between smokers and non-smokers
+
+-   **Stroke, HTN, Diabetes** are all binary; most individuals do not report these conditions, but the presence of these comorbidities may still be significant for CHD risk.
+
+-   **CHD** is imbalanced (3433 No vs. 606 Yes), highlighting a potential issue for classification models, which may need balancing techniques or appropriate evaluation metrics.
+
+### Analysis of the categorical variable
+
+```{r, fig.width=8, fig.height=2, fig.align='center'}
+#| echo: false
+CHD <- ggplot(as.data.frame(table(dataf$CHD)), aes(x = Var1, y = Freq, fill = Var1)) + 
+  geom_bar(stat = "identity") + 
+  labs(title = "Distribution of CHD", 
+       x = "CHD", 
+       y = "Count", 
+       fill = "") + 
+  theme(axis.text.x = element_blank(), axis.ticks.x = element_blank())  
+
+sex <- ggplot(as.data.frame(table(dataf$sex)), aes(x = Var1, y = Freq, fill = Var1)) + 
+  geom_bar(stat = "identity") + 
+  labs(title = "Distribution of sex", 
+       x = "Sex", 
+       y = "Count", 
+       fill = "") + 
+  theme(axis.text.x = element_blank(), axis.ticks.x = element_blank())  
+
+CHD + sex
+
+education <- ggplot(as.data.frame(table(dataf$education)), aes(x = Var1, y = Freq, fill = Var1)) + 
+  geom_bar(stat = "identity") + 
+  labs(title = "Distribution of Education", 
+       x = "Education", 
+       y = "Count", 
+       fill = "") + 
+  theme(axis.text.x = element_blank(), axis.ticks.x = element_blank())  
+
+
+smoker <- ggplot(as.data.frame(table(dataf$smoker)), aes(x = Var1, y = Freq, fill = Var1)) + 
+  geom_bar(stat = "identity") + 
+  labs(title = "Distribution of smoker", 
+       x = "smoker", 
+       y = "Count", 
+       fill = "") + 
+  theme(axis.text.x = element_blank(), axis.ticks.x = element_blank())  
+
+education + smoker
+
+stroke <- ggplot(as.data.frame(table(dataf$stroke)), aes(x = Var1, y = Freq, fill = Var1)) + 
+  geom_bar(stat = "identity") + 
+  labs(title = "Distribution of stroke", 
+       x = "stroke", 
+       y = "Count", 
+       fill = "") + 
+  theme(axis.text.x = element_blank(), axis.ticks.x = element_blank())  
+
+HTN <- ggplot(as.data.frame(table(dataf$HTN)), aes(x = Var1, y = Freq, fill = Var1)) + 
+  geom_bar(stat = "identity") + 
+  labs(title = "Distribution of Hypertension", 
+       x = "Hypertension", 
+       y = "Count", 
+       fill = "") + 
+  theme(axis.text.x = element_blank(), axis.ticks.x = element_blank())  
+
+diabetes <- ggplot(as.data.frame(table(dataf$diabetes)), aes(x = Var1, y = Freq, fill = Var1)) + 
+  geom_bar(stat = "identity") + 
+  labs(title = "Distribution of diabetes", 
+       x = "diabetes", 
+       y = "Count", 
+       fill = "") + 
+  theme(axis.text.x = element_blank(), axis.ticks.x = element_blank())  
+
+stroke + HTN + diabetes
+
+rm(CHD, sex, stroke, HTN, diabetes, education, smoker)
+```
+
+The bar plots provide insight into the distribution of the categorical variables in the dataset:
+
+-   **CHD** is highly imbalanced, with the majority of individuals not developing coronary heart disease within 10 years.
+
+-   **Sex** is relatively balanced, with a slightly higher number of females than males.
+
+-   **Education** is skewed towards lower educational attainment, with most participants having no high school degree or only a high school diploma.
+
+-   **Smoker** status is nearly evenly split, indicating a good amount of variation for predictive modeling.
+
+-   **Hypertension (HTN)** also shows variability, with a substantial number of individuals reporting a diagnosis.
+
+However, the variables **`stroke` and `diabetes`** display **no meaningful variability**, with almost all participants labeled as `"no"`. These variables are therefore unlikely to contribute useful information to the predictive model, as they do not help differentiate between individuals who develop CHD and those who do not. Including such variables could introduce unnecessary noise or overfitting without providing any discriminatory power.
+
+### Analysis of the numerical variable
+
+```{r,  fig.width=9, fig.height=4, fig.align='center'}
+#| echo: false
+
+# Singoli plot
+Age <- ggplot(dataf, aes(x = CHD, y = age, fill = CHD)) +
+  geom_boxplot() +
+  labs(title = "Age by CHD", x = "", y = "Age") +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+Cholesterol <- ggplot(dataf, aes(x = CHD, y = chol, fill = CHD)) +
+  geom_boxplot() +
+  labs(title = "Cholesterol by CHD", x = "", y = "Cholesterol") +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+HR <- ggplot(dataf, aes(x = CHD, y = HR, fill = CHD)) +
+  geom_boxplot() +
+  labs(title = "HR by CHD", x = "", y = "HR") +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+BMI <- ggplot(dataf, aes(x = CHD, y = BMI, fill = CHD)) +
+  geom_boxplot() +
+  labs(title = "BMI by CHD", x = "", y = "BMI") +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+(Age | Cholesterol | HR | BMI)
+rm(Age, Cholesterol, HR, BMI)
+```
+
+The boxplots show a distribution of **Age**, **Cholesterol**, **Heart Rate (HR)**, and **Body Mass Index (BMI)** stratified by CHD status.
+
+-   **Age** shows a clear separation: individuals who developed CHD tend to be older, with a visibly higher median and upper quartile compared to those without CHD. This aligns with age being a well-known risk factor for heart disease.
+
+-   **Cholesterol** levels also appear slightly elevated in the CHD-positive group. Although the overlap is considerable, the median and upper range shift upward, suggesting a possible association.
+
+-   **Heart Rate** shows a small increase in the CHD group, but the difference is less pronounced. The spread is wider and includes more outliers.
+
+-   **BMI** distributions are very similar across CHD categories, indicating that BMI might not be a strong discriminator in this dataset, despite being a general risk factor for cardiovascular issues.
+
+```{r, fig.width=9, fig.height=4, fig.align='center'}
+#| echo: false
+library(ggplot2)
+library(patchwork)
+
+# Age
+Age <- ggplot(dataf, aes(x = age, fill = CHD, color = CHD)) +
+  geom_density(alpha = 0.4, lwd = 1) +
+  labs(title = "Age Density by CHD Status", x = "Age", y = "Density") +
+  theme_minimal()
+
+# Cholesterol
+Cholesterol <- ggplot(dataf, aes(x = chol, fill = CHD, color = CHD)) +
+  geom_density(alpha = 0.4, lwd = 1) +
+  labs(title = "Cholesterol Density by CHD Status", x = "Cholesterol", y = "Density") +
+  theme_minimal()
+
+# Heart Rate
+HR <- ggplot(dataf, aes(x = HR, fill = CHD, color = CHD)) +
+  geom_density(alpha = 0.4, lwd = 1) +
+  labs(title = "HR Density by CHD Status", x = "HR", y = "Density") +
+  theme_minimal()
+
+# BMI
+BMI <- ggplot(dataf, aes(x = BMI, fill = CHD, color = CHD)) +
+  geom_density(alpha = 0.4, lwd = 1) +
+  labs(title = "BMI Density by CHD Status", x = "BMI", y = "Density") +
+  theme_minimal()
+
+# 2x2 Layout
+(Age + Cholesterol) / (HR + BMI)
+rm(Age, Cholesterol, HR, BMI)
+```
+
+Overlaying empirical density curves for continuous predictors offers a useful way to compare the shapes of distributions across CHD and non-CHD groups. This visual approach can reveal important differences that may not be apparent from summary statistics alone.
+
+-   **Age** displays a clear rightward shift in the CHD group, with a higher density around 60 years, compared to a peak near 45–50 for the non-CHD group. This strongly supports age as a key risk factor for coronary heart disease.
+
+-   **Cholesterol** also shows a noticeable rightward shift in the CHD group, indicating that individuals with higher cholesterol levels are more likely to develop CHD. While the overall shape remains similar, the CHD group exhibits a heavier tail, suggesting more extreme values.
+
+-   **Heart Rate (HR)** distributions are highly overlapping between the two groups, with no clear separation. This suggests that HR alone has limited discriminative power in identifying individuals at risk for CHD.
+
+-   **Body Mass Index (BMI)** shows a modest shift toward higher values in the CHD group, though the difference is less pronounced than for age or cholesterol. This may indicate that BMI is a weak but still potentially informative predictor
+
+Among the continuous predictors examined, age and cholesterol provide the clearest evidence of distributional differences between CHD and non-CHD groups. HR and BMI, by contrast, exhibit substantial overlap, limiting their usefulness in isolation
+
+#### Correlation between the categorical variable
+
+I performed Pearson's Chi-squared tests to assess the association between pairs of categorical variables, including the response variable (CHD)
+
+```{r}
+#| echo: false
+
+corr_test_data <- dataf %>% select(sex, education, smoker, HTN, CHD)
+
+# Creare the function
+corr_test_check <- function(data) {
+  res <- data.frame(Variable1 = character(), 
+                    Variable2 = character(),
+                    p_value = numeric(), 
+                    Cramer_V = numeric())
+  
+  var_combos <- combn(names(data), 2)
+  
+  for (i in 1:ncol(var_combos)) {
+    v1 <- var_combos[1, i]
+    v2 <- var_combos[2, i]
+    
+    tbl <- table(data[[v1]], data[[v2]])
+    test <- suppressWarnings(chisq.test(tbl))  # evita warning su expected freq
+    
+    # Cramér's V
+    n <- sum(tbl)
+    k <- nrow(tbl)
+    r <- ncol(tbl)
+    v_cramer <- sqrt(as.numeric(test$statistic) / (n * min(k - 1, r - 1)))
+    
+    if (test$p.value < 0.001) {
+      res <- rbind(res, 
+                   data.frame(Variable1 = v1,
+                              Variable2 = v2,
+                              p_value = test$p.value,
+                              Cramer_V = v_cramer),
+                   row.names = NULL)
+    }
+  }
+  
+  return(res)
+}
+
+corr_results <- corr_test_check(corr_test_data)
+corr_results
+rm(corr_results, corr_test_data, corr_test_check)
+```
+
+The custom function I implemented returns only the pairs of categorical variables that exhibit a statistically significant association (p-value \< 0.001), along with the strength of the relationship measured by Cramér’s V.\
+The results reveal some degree of association among the predictors. In particular, a correlation is observed between sex and hypertension (HTN); to mitigate potential multicollinearity, only one of these variables will be included in the model.\
+Additionally, smoke shows a strong association with the response variable (CHD), supporting its inclusion as a relevant predictor.
+
+## Model
+
+#### Splitting the dataset
+
+The dataset will be split into two subsets: a training set and a test set. To ensure that the split reflects the original distribution of the response variable (CHD), I apply stratified sampling. Using the argument strata from the tidy model package, I can preserve the class proportions of CHD within both the training and test sets, which is particularly important given the imbalance in the response variable.
+
+```{r}
+#| include: false
+set.seed(5)
+df_split <- initial_split(dataf, prop = 0.5, strata = "CHD")
+train_data <- training(df_split)
+test_data <- testing(df_split)
+
+```
+
+The proportion seems to be equal for all the variables.
+
+#### Logistic Regression
+
+```{r}
+#| echo: false
+lr_spec <- logistic_reg(
+  mode = "classification",
+  engine = "glm")
+
+lr_fit <- lr_spec %>%
+    fit(CHD ~ sex + age + education + smoker + cpd + stroke + HTN + diabetes + chol + DBP + BMI + HR,
+        data = train_data
+    )
+summary(lr_fit$fit)
+```
+
+Among the most significant predictors, age has a strong positive effect, confirming that the probbaility of CHD increases with age. Sex is also relevant: males are significantly more at risk than females. Furthermore, individuals with hypertension (HTN) and those with diabetes show a markedly higher probability of developing CHD. The variable cpd(cigarettes per day) is statistically significant as well, suggesting that the intensity of smoking contributes to CHD risk. Some variables exhibit marginal or borderline significance. For example, individuals with a high school degree(compared to no high school education) appear to have a lower risk of CHD, while diastolic blood pressure (DBP) and post-college educationare close to the significance threshold. On the other hand, several predictors are not statistically significant. The binary variable smoker does not appear to have a notable effect, despite cpd being significant, indicating that intensity rather than status is more informative. Variables such as cholesterol, BMI, heart rate (HR), stroke, and college education do not show meaningful associations in this model. Regarding overall model fit, the reduction in deviance from the null model (1707.4 to 1520.8) indicates a modest improvement.
+
+In conclusion, the model suggests that age, sex, hypertension, diabetes, and cigarette per day are key risk factors for CHD in this dataset. Other variables, although clinically relevant, may not provide strong predictive value in this particular model.
+
+#### K-NN classifier
+
+To fit a KNN classifier, i have scale the variable
+
+```{r}
+#| echo: false
+set.seed(100)
+
+# Preprocess for the knn
+# - Normalization of the data
+# - Dummy variable for the categorical 
+
+full_data <- rbind(test_data, train_data)
+
+full_data <- full_data %>%
+  mutate(
+    # Recode factors back to original numeric codes
+    sex = recode(sex,
+                    "male" = "0",
+                    "female" = "1"),
+    education = recode(education,
+                       "no HS degree" = "1",
+                       "HS graduate" = "2",
+                       "college graduate" = "3",
+                       "post-college" = "4"),
+    smoker = recode(smoker,
+                    "no" = "0",
+                    "yes" = "1"),
+    stroke = recode(stroke,
+                    "no" = "0",
+                    "yes" = "1"),
+    HTN = recode(HTN,
+                 "no" = "0",
+                 "yes" = "1"),
+    diabetes = recode(diabetes,
+                      "no" = "0",
+                      "yes" = "1"),
+  ) %>%
+  # Convert to numeric
+  mutate(across(c(education, smoker, stroke, HTN, diabetes),
+                ~ as.numeric(as.character(.))))
+
+features <- c("sex", "age", "education", "smoker", "cpd", "stroke", 
+              "HTN", "diabetes", "chol", "DBP", "BMI", "HR")
+
+df_num <- full_data %>%
+  mutate(across(where(is.character), as.factor)) %>%
+  mutate(across(where(is.factor), as.numeric))
+
+# Re split of the data 
+n <- nrow(full_data)
+half <- floor(n / 2)
+
+X_test <- df_num[1:half, features]
+X_train <- df_num[(half + 1):n, features]
+
+y_test <- df_num[1:half, "CHD", drop = TRUE]
+y_train <- df_num[(half + 1):n, "CHD", drop = TRUE]
+
+# 4. Normalizzazione basata sul training
+means <- apply(X_train, 2, mean)
+sds <- apply(X_train, 2, sd)
+
+X_train_norm <- scale(X_train, center = means, scale = sds)
+X_test_norm  <- scale(X_test, center = means, scale = sds)
+
+# 1. Vettori per k
+k_values <- 1:30
+train_errors <- numeric(length(k_values))
+test_errors <- numeric(length(k_values))
+
+# 2. Calcolo errori per ogni k
+for (i in seq_along(k_values)) {
+  k <- k_values[i]
+  
+  train_pred <- knn.cv(train = X_train_norm, cl = y_train, k = k)
+  train_errors[i] <- mean(train_pred != y_train)
+  
+  test_pred <- knn(train = X_train_norm, test = X_test_norm, cl = y_train, k = k)
+  test_errors[i] <- mean(test_pred != y_test)
+}
+
+
+df_plot <- data.frame(
+  k = k_values,
+  inv_k = 1 / k_values,
+  Train = train_errors,
+  Test = test_errors
+) %>%
+  pivot_longer(cols = c("Train", "Test"), names_to = "Set", values_to = "Error")
+
+min_index <- which.min(test_errors)
+best_k <- k_values[min_index]
+best_inv_k <- 1 / best_k
+best_error <- test_errors[min_index]
+
+ggplot(df_plot, aes(x = k, y = Error, color = Set, linetype = Set)) +
+  geom_line(size = 1) +
+  geom_point(size = 2) +
+  geom_hline(yintercept = mean(test_errors), linetype = "dashed", color = "black", linewidth = 1) +
+  scale_color_manual(values = c("Train" = "steelblue", "Test" = "orangered")) +
+  labs(
+    title = "Error Rate vs K",
+    x = "K",
+    y = "Error Rate"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "bottom")
+```
+
+To determine the optimal value of K, I plotted the test error rate against different values of K.\
+The graph allowed me to identify that the best-performing value corresponds to K = 29, which minimizes the test error.
+
+```{r}
+knn_pred <- knn(train = X_train_norm, test = X_test_norm, cl = y_train, k = 29)
+
+```
+
+### Evaluation of the two model
+
+```{r, results='asis'}
+#| echo: false
+
+# Prediction for logistic
+logistic_probs <- predict(lr_fit, new_data = test_data, type = "prob")$.pred_Yes
+logistic_pred <- as.factor(ifelse(logistic_probs > 0.5, "Yes", "No"))
+
+# Prediction for KNN
+knn_pred <- ifelse(knn_pred == 1, yes = "No", no = "Yes")
+
+# truth
+truth_knn <- ifelse(y_test == 1, yes = "No", no = "Yes")
+truth_log <- test_data$CHD
+
+# Confusion matrix LOGISTIC
+cm_log <- table(Predicted = logistic_pred, Actual = test_data$CHD)
+TP_log <- sum(cm_log["Yes", "Yes"])
+TN_log <- sum(cm_log["No", "No"])
+FP_log <- sum(cm_log["Yes", "No"])
+FN_log <- sum(cm_log["No", "Yes"])
+
+log_acc <- (TP_log + TN_log) / (TP_log + TN_log + FP_log + FN_log)
+log_prec <- TP_log / (TP_log + FP_log)
+log_rec <- TP_log / (TP_log + FN_log)
+log_f1 <- 2 * log_prec * log_rec / (log_prec + log_rec)
+
+# Confusion matrix KNN
+cm_knn <- table(Predicted = knn_pred, Actual = truth_knn)
+TP_knn <- sum(cm_knn["Yes", "Yes"])
+TN_knn <- sum(cm_knn["No", "No"])
+FP_knn <- sum(cm_knn["Yes", "No"])
+FN_knn <- sum(cm_knn["No", "Yes"])
+
+knn_acc <- (TP_knn + TN_knn) / (TP_knn + TN_knn + FP_knn + FN_knn)
+knn_prec <- TP_knn / (TP_knn + FP_knn)
+knn_rec <- TP_knn / (TP_knn + FN_knn)
+knn_f1 <- 2 * knn_prec * knn_rec / (knn_prec + knn_rec)
+
+# Comparison table
+model_eval <- data.frame(
+  Model = c("Logistic Regression", "KNN (k = 29)"),
+  Accuracy = c(log_acc, knn_acc),
+  Precision = c(log_prec, knn_prec),
+  Recall = c(log_rec, knn_rec),
+  F1_Score = c(log_f1, knn_f1)
+)
+
+print(model_eval)
+```
+
+```{r}
+#| echo: false
+
+
+roc_score <- roc(response = as.numeric(test_data$CHD) - 1, predictor = logistic_probs)
+
+
+roc_df <- data.frame(
+  FPR = 1 - roc_score$specificities,
+  TPR = roc_score$sensitivities
+)
+
+opt <- coords(roc_score, "best", best.method = "closest.topleft")
+
+ggplot(roc_df, aes(x = FPR, y = TPR)) +
+  geom_line(color = "#0072B2", linewidth = 1.2) +
+  geom_abline(linetype = "dashed", color = "gray") +
+  annotate("point", 
+           x = 1 - as.numeric(opt["specificity"]), 
+           y = as.numeric(opt["sensitivity"]), 
+           color = "red", size = 2.5) +
+  annotate("text", x = 0.6, y = 0.2, 
+           label = paste0("AUC = ", round(auc(roc_score), 3)), size = 4) +
+  labs(
+    title = "ROC Curve – Logistic Regression",
+    x = "False Positive Rate (1 - Specificity)",
+    y = "True Positive Rate (Sensitivity)"
+  ) +
+  theme_minimal()
+
+print(paste("best_threshold:", opt$threshold))
+```
+
+```{r}
+table(Prevision = logistic_pred, Real = test_data$CHD)
+table(Prevision = knn_pred, Real = truth_knn) 
+```
+
+From th Comparison of Model Performance Metrics table, we observe that while both models achieve similar accuracy, logistic regression significantly outperforms KNN in terms of precision, recall, and F1-score. This suggests that logistic regression is more effective at correctly identifying positive CHD cases.
+
+The confusion matrix further reinforce this observation: logistic regression is able to detect more true positives and fewer false negatives than KNN. However, both models struggle to correctly identify positive cases, which highlights a key issue the class imbalance in the dataset. In fact the number of "No CHD" cases dominates the predictions, making it harder for the models to learn meaningful patterns for the minority class. Namely the threshold is 0.145 that shows that the dataset is unbalanced. This imbalance make the dataset unusable.
+
+In conclusion, with these methods results impossible find, and fit any of these model to get an actual prediction. Beside that, we can use the logistic regression to understand the overall general interaction that the independent variables have with the response CHD.

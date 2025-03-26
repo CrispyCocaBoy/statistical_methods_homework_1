@@ -327,9 +327,9 @@ corr_results
 rm(corr_results, corr_test_data, corr_test_check)
 ```
 
-The custom function I implemented returns only the pairs of categorical variables that exhibit a statistically significant association (p-value \< 0.001), along with the strength of the relationship measured by Cramér’s V.\
-The results reveal some degree of association among the predictors. In particular, a correlation is observed between sex and hypertension (HTN); to mitigate potential multicollinearity, only one of these variables will be included in the model.\
-Additionally, smoke shows a strong association with the response variable (CHD), supporting its inclusion as a relevant predictor.
+The custom function I implemented returns only the pairs of categorical variables that show a statistically significant association (p-value \< 0.001), along with the strength of the relationship measured by Cramér’s V. The results reveal that the only uncorrelated pairs are sex – hypertension (HTN) and smoker – CHD. All other variable pairs show some level of correlation. This is particularly important when the response variable is correlated with independent variables, which supports our exploration goals. However, correlations among independent variables may introduce multicollinearity, which can negatively impact the model. As a result, including the smoker variable in the logistic regression would be unnecessary. Additionally, it is important to check for multicollinearity, for example by calculating the Variance Inflation Factor (VIF).
+
+Note: Given the specific requirements of this assignment, I will not perform parameter tuning, as it was not requested in the prompt.
 
 ## Model
 
